@@ -246,3 +246,23 @@ def test_full_text_search_and_delete(store):
 def test_mode_selection(config):
     assert choose_mode("explica o alerta", config).name == "explicar"
     assert choose_mode("investiga a causa", config).name == "investigar"
+
+
+def test_answer_keeps_all_text_after_the_last_tool_call(monkeypatch, store):
+    from claude_agent_sdk import AssistantMessage, TextBlock, ToolUseBlock
+
+    import cloudobsai.agent as agent_module
+
+    def assistant(*blocks):
+        return AssistantMessage(content=list(blocks), model="m")
+
+    async def fake_query(prompt, options):
+        yield assistant(TextBlock("vou consultar"), ToolUseBlock("1", "mcp__grafana__x", {}))
+        yield assistant(TextBlock("resumo"))
+        yield assistant(TextBlock("quer mais?"))
+
+    monkeypatch.setattr(agent_module, "query", fake_query)
+    monkeypatch.setattr(agent_module.Agent, "_options", lambda self, mode: None)
+    result = run(agent_module.Agent(store, "p").run("q", Mode("explicar", 4, 90, 500)))
+    assert result.text == "resumo\n\nquer mais?"
+    assert result.tools == ["mcp__grafana__x"]

@@ -59,11 +59,13 @@ class Agent:
             async with asyncio.timeout(mode.timeout_seconds):
                 async for message in query(prompt=prompt, options=self._options(mode)):
                     if isinstance(message, AssistantMessage):
-                        # Only the last assistant message is the answer; earlier text is narration.
-                        texts = [b.text for b in message.content if isinstance(b, TextBlock)]
-                        if texts:
-                            parts = texts
-                        result.tools += [b.name for b in message.content if isinstance(b, ToolUseBlock)]
+                        # The answer is the text after the last tool call; what came before is narration.
+                        # Each block may arrive as its own message, so text accumulates until then.
+                        tools = [b.name for b in message.content if isinstance(b, ToolUseBlock)]
+                        if tools:
+                            parts = []
+                            result.tools += tools
+                        parts += [b.text for b in message.content if isinstance(b, TextBlock)]
                     elif isinstance(message, ResultMessage):
                         usage = message.usage or {}
                         result.input_tokens = usage.get("input_tokens")
@@ -76,7 +78,7 @@ class Agent:
             result.outcome = error.subtype or "result_error"
             if error.subtype == "error_max_turns" and error.session_id:
                 parts = await self._wrap_up(error.session_id, mode, result) or parts
-        result.text = "\n".join(parts).strip()
+        result.text = "\n\n".join(parts).strip()
         return result
 
     async def _wrap_up(self, session_id: str, mode: Mode, result: AgentResult) -> list[str]:
@@ -94,7 +96,7 @@ class Agent:
             async with asyncio.timeout(WRAP_UP_TIMEOUT_SECONDS):
                 async for message in query(prompt=WRAP_UP_PROMPT, options=options):
                     if isinstance(message, AssistantMessage):
-                        texts = [b.text for b in message.content if isinstance(b, TextBlock)] or texts
+                        texts += [b.text for b in message.content if isinstance(b, TextBlock)]
                     elif isinstance(message, ResultMessage) and not message.is_error:
                         result.outcome = "ok"
                         result.cost_usd = (result.cost_usd or 0) + (message.total_cost_usd or 0)
