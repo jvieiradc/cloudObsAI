@@ -31,3 +31,11 @@ docker compose run --rm app python scripts/validate_stack.py
    ```
 
 Um space na lista responde a menções. Para receber alertas pelo app, ele também precisa estar em `CLOUDOBSAI_ALERT_SPACES` e ter uma rota no Alertmanager.
+
+## Uso e custo
+
+```
+docker compose exec app python scripts/usage.py 7
+```
+
+Mostra pedidos, erros, tokens e custo estimado por dia e por modo. O custo é uma estimativa do SDK por preço de tabela; o valor de referência é o painel do gateway.
