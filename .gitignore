@@ -1,0 +1,6 @@
+CLAUDE.local.md
+.env
+__pycache__/
+*.egg-info/
+.agent-home/
+.agent-cwd/

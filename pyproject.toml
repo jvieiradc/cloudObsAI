@@ -1,0 +1,13 @@
+[project]
+name = "cloudobsai"
+version = "0.1.0"
+description = "Read-only observability assistant for Google Chat, built on the Claude Agent SDK"
+requires-python = ">=3.11"
+dependencies = ["claude-agent-sdk>=0.2.175"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

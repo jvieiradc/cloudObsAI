@@ -1,0 +1,8 @@
+.git
+.env
+.agent-home
+.agent-cwd
+CLAUDE.local.md
+docs
+**/__pycache__
+**/*.egg-info

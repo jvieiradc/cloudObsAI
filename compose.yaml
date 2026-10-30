@@ -1,0 +1,41 @@
+services:
+  mcp-grafana:
+    image: grafana/mcp-grafana:2.1.1
+    restart: unless-stopped
+    # Read-only: no write tools, no generic API tool (SPEC 7.3).
+    command:
+      - --transport=streamable-http
+      - --address=0.0.0.0:8000
+      - --allowed-hosts=mcp-grafana:8000
+      - --disable-write
+      - --disable-api
+      - --enabled-tools=search,datasource,prometheus,loki,alerting,dashboard
+      - --usage-stats=disabled
+    environment:
+      GRAFANA_URL: ${GRAFANA_URL:?}
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_SERVICE_ACCOUNT_TOKEN:?}
+      # The network is shared with other containers, so callers must authenticate.
+      MCP_GRAFANA_SERVER_TOKEN: ${MCP_GRAFANA_SERVER_TOKEN:?}
+    networks: [observability]
+
+  # No long-running service yet: use `docker compose run --rm app <command>`.
+  app:
+    build: .
+    profiles: [tools]
+    depends_on: [mcp-grafana]
+    environment:
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:?}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?}
+      CLOUDOBSAI_MODEL: ${CLOUDOBSAI_MODEL:?}
+      GRAFANA_URL: ${GRAFANA_URL:?}
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_SERVICE_ACCOUNT_TOKEN:?}
+      JAEGER_DATASOURCE_UID: ${JAEGER_DATASOURCE_UID:-}
+      MCP_GRAFANA_URL: http://mcp-grafana:8000/mcp
+      MCP_GRAFANA_SERVER_TOKEN: ${MCP_GRAFANA_SERVER_TOKEN:?}
+    networks: [observability]
+
+networks:
+  # The existing Docker network shared with Grafana and Alertmanager.
+  observability:
+    external: true
+    name: ${OBS_DOCKER_NETWORK:?}
