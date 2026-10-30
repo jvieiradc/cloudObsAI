@@ -18,6 +18,12 @@ WRAP_UP_PROMPT = (
 )
 
 
+def join_text(parts: list[str]) -> str:
+    """Joins text blocks, dropping a block that the next one repeats from its start."""
+    kept = [part for part, following in zip(parts, parts[1:] + [""]) if not following.startswith(part)]
+    return "\n\n".join(kept).strip()
+
+
 @dataclass
 class AgentResult:
     text: str = ""
@@ -61,11 +67,11 @@ class Agent:
                     if isinstance(message, AssistantMessage):
                         # The answer is the text after the last tool call; what came before is narration.
                         # Each block may arrive as its own message, so text accumulates until then.
+                        parts += [b.text for b in message.content if isinstance(b, TextBlock)]
                         tools = [b.name for b in message.content if isinstance(b, ToolUseBlock)]
                         if tools:
                             parts = []
                             result.tools += tools
-                        parts += [b.text for b in message.content if isinstance(b, TextBlock)]
                     elif isinstance(message, ResultMessage):
                         usage = message.usage or {}
                         result.input_tokens = usage.get("input_tokens")
@@ -78,7 +84,7 @@ class Agent:
             result.outcome = error.subtype or "result_error"
             if error.subtype == "error_max_turns" and error.session_id:
                 parts = await self._wrap_up(error.session_id, mode, result) or parts
-        result.text = "\n\n".join(parts).strip()
+        result.text = join_text(parts)
         return result
 
     async def _wrap_up(self, session_id: str, mode: Mode, result: AgentResult) -> list[str]:

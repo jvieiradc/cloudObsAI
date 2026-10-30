@@ -266,3 +266,9 @@ def test_answer_keeps_all_text_after_the_last_tool_call(monkeypatch, store):
     result = run(agent_module.Agent(store, "p").run("q", Mode("explicar", 4, 90, 500)))
     assert result.text == "resumo\n\nquer mais?"
     assert result.tools == ["mcp__grafana__x"]
+
+
+def test_repeated_block_prefix_is_dropped():
+    from cloudobsai.agent import join_text
+
+    assert join_text(["O alerta", "O alerta caiu.", "Quer mais?"]) == "O alerta caiu.\n\nQuer mais?"
