@@ -1,6 +1,6 @@
 FROM python:3.13-slim
 
-RUN useradd --create-home --uid 1000 cloudobsai \
+RUN useradd --create-home --uid 10010 cloudobsai \
     && install -d -o cloudobsai /var/lib/cloudobsai/home /var/lib/cloudobsai/cwd /var/lib/cloudobsai/data
 
 WORKDIR /app
