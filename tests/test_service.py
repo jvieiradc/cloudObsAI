@@ -7,7 +7,7 @@ import pytest
 from cloudobsai.agent import AgentResult
 from cloudobsai.alerts import handle_alert, signature
 from cloudobsai.config import Config, Mode
-from cloudobsai.core import ERROR_MESSAGE, LIMIT_MESSAGE, MENTION_WARNING, Core, choose_mode, split_memory
+from cloudobsai.core import DEFAULT_REQUEST, ERROR_MESSAGE, HELP_MESSAGE, LIMIT_MESSAGE, MENTION_WARNING, Core, choose_mode, split_memory
 from cloudobsai.store import Store
 
 SPACE = "spaces/ALLOWED"
@@ -120,6 +120,36 @@ def test_mention_in_alert_thread_uses_alert_context(config, store):
     run(handle_alert(ALERT, config, store, chat))
     run(Core(config, store, chat, agent).handle(event()))
     assert "LinkDown" in agent.prompts[0] and "<alert_context>" in agent.prompts[0]
+
+
+def quoting(event_, text):
+    event_["message"]["quotedMessageMetadata"] = {"quotedMessageSnapshot": {"text": text}}
+    return event_
+
+
+def test_quoted_alert_reaches_the_agent(config, store):
+    agent = FakeAgent()
+    run(Core(config, store, FakeChat(), agent).handle(quoting(event(text="resumo?"), "(WARNING) LinkDown - Firing")))
+    assert "<quoted_message>\n(WARNING) LinkDown - Firing" in agent.prompts[0]
+
+
+def test_bare_mention_on_a_quote_uses_the_default_request(config, store):
+    agent = FakeAgent()
+    run(Core(config, store, FakeChat(), agent).handle(quoting(event(text=""), "(WARNING) LinkDown - Firing")))
+    assert DEFAULT_REQUEST in agent.prompts[0]
+
+
+def test_bare_mention_in_an_alert_thread_uses_the_default_request(config, store):
+    chat, agent = FakeChat(), FakeAgent()
+    run(handle_alert(ALERT, config, store, chat))
+    run(Core(config, store, chat, agent).handle(event(text="")))
+    assert DEFAULT_REQUEST in agent.prompts[0] and "<alert_context>" in agent.prompts[0]
+
+
+def test_bare_mention_without_context_asks_for_it(config, store):
+    chat, agent = FakeChat(), FakeAgent()
+    run(Core(config, store, chat, agent).handle(event(text="")))
+    assert agent.prompts == [] and chat.posts[0]["text"].startswith(HELP_MESSAGE)
 
 
 def test_free_question_has_no_alert_context(config, store):

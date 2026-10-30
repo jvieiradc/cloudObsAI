@@ -13,7 +13,11 @@ log = logging.getLogger(__name__)
 MENTION_WARNING = "\n\n_Para continuar nesta thread, mencione sempre o app: sem a menção, ele não recebe a mensagem._"
 ERROR_MESSAGE = "Não consegui concluir a análise agora. Tente de novo em instantes."
 LIMIT_MESSAGE = "Precisei de mais consultas do que o limite permite. Tente restringir: um serviço, um alerta ou uma janela menor."
-HELP_MESSAGE = "Me diga o que analisar. Exemplo: *explica este alerta* ou *investiga a causa*."
+HELP_MESSAGE = (
+    "Me diga o que analisar, por exemplo: *quais alertas estão disparando?* "
+    "Para falar de um alerta, responda à mensagem dele citando-a e me mencione."
+)
+DEFAULT_REQUEST = "Explique isto em poucas linhas e diga o estado atual."
 INVESTIGATE_WORDS = re.compile(r"\b(investig\w*|aprofund\w*|causa\w*|por que|porque|detalh\w*|analis\w*)\b", re.I)
 REGISTER_COMMAND = re.compile(r"^\s*registr\w*\s*:?\s+(?P<text>.+)", re.I | re.S)
 MEMORY_LINE = re.compile(r"^\s*MEMORIA:\s*(?P<text>.+?)\s*$", re.M)
@@ -33,10 +37,18 @@ def split_memory(answer: str) -> tuple[str, str | None]:
     return MEMORY_LINE.sub("", answer).strip(), match.group("text")
 
 
-def build_prompt(text: str, thread: sqlite3.Row | None, turns: list, incidents: list) -> str:
+def quoted_text(message: dict) -> str:
+    """Text of the message being replied to, which also covers alerts posted by other senders."""
+    snapshot = (message.get("quotedMessageMetadata") or {}).get("quotedMessageSnapshot") or {}
+    return (snapshot.get("text") or snapshot.get("formattedText") or "").strip()
+
+
+def build_prompt(text: str, thread: sqlite3.Row | None, turns: list, incidents: list, quoted: str = "") -> str:
     sections = []
     if thread is not None and thread["alert_json"]:
         sections.append(f"<alert_context>\n{thread['alert_json']}\n</alert_context>")
+    if quoted:
+        sections.append(f"<quoted_message>\n{quoted}\n</quoted_message>")
     if incidents:
         memory = "\n".join(format_incident(row) for row in incidents)
         sections.append(f"<incident_memory>\n{memory}\n</incident_memory>")
@@ -73,14 +85,15 @@ class Core:
         text = (message.get("argumentText") or message.get("text") or "").strip()
         thread_name = (message.get("thread") or {}).get("name") or ""
         event_id = message["name"]
+        quoted = quoted_text(message)
 
         register = REGISTER_COMMAND.match(text) if not is_dm else None
         if register:
             answer, audit = self._register(register.group("text").strip(), thread_name, user), {"mode": "registro"}
-        elif not text:
+        elif not text and not quoted and not self._is_alert_thread(thread_name, is_dm):
             answer, audit = HELP_MESSAGE, {"mode": "ajuda"}
         else:
-            answer, audit = await self._analyze(text, thread_name, is_dm)
+            answer, audit = await self._analyze(text or DEFAULT_REQUEST, thread_name, is_dm, quoted)
 
         if not is_dm and thread_name and self._store.claim_warning(thread_name, space["name"]):
             answer += MENTION_WARNING
@@ -96,7 +109,11 @@ class Core:
         except Exception as error:
             result = f"chat_error:{type(error).__name__}"
         self._store.audit(event_id=event_id, space=space["name"], user_name=user, result=result, **audit)
-        log.info("request_done mode=%s result=%s tools=%s", audit.get("mode"), result, audit.get("tools"))
+        log.info("request_done mode=%s result=%s quoted=%s tools=%s", audit.get("mode"), result, bool(quoted), audit.get("tools"))
+
+    def _is_alert_thread(self, thread_name: str, is_dm: bool) -> bool:
+        thread = self._store.thread(thread_name) if thread_name and not is_dm else None
+        return thread is not None and bool(thread["alert_json"])
 
     def _register(self, summary: str, thread_name: str, author: str) -> str:
         thread = self._store.thread(thread_name) if thread_name else None
@@ -110,13 +127,13 @@ class Core:
         )
         return f"Registrado como confirmado por {author}."
 
-    async def _analyze(self, text: str, thread_name: str, is_dm: bool) -> tuple[str, dict]:
+    async def _analyze(self, text: str, thread_name: str, is_dm: bool, quoted: str = "") -> tuple[str, dict]:
         mode = choose_mode(text, self._config)
         thread = self._store.thread(thread_name) if thread_name and not is_dm else None
         is_alert = thread is not None and bool(thread["alert_json"])
         incidents = self._store.related_incidents(thread["signature"], thread["alertname"]) if is_alert else []
         turns = self._store.recent_turns(thread_name) if thread_name else []
-        prompt = build_prompt(text, thread, turns, incidents)
+        prompt = build_prompt(text, thread, turns, incidents, quoted)
         try:
             result = await self._agent.run(prompt, mode)
         except Exception as error:
