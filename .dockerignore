@@ -6,3 +6,5 @@ CLAUDE.local.md
 docs
 **/__pycache__
 **/*.egg-info
+data
+secrets

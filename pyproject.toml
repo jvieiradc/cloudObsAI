@@ -3,7 +3,16 @@ name = "cloudobsai"
 version = "0.1.0"
 description = "Read-only observability assistant for Google Chat, built on the Claude Agent SDK"
 requires-python = ">=3.11"
-dependencies = ["claude-agent-sdk>=0.2.175"]
+dependencies = [
+    "aiohttp>=3.10",
+    "claude-agent-sdk>=0.2.175",
+    "google-auth>=2.30",
+    "google-cloud-pubsub>=2.25",
+    "requests>=2.32",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
 
 [build-system]
 requires = ["setuptools>=68"]

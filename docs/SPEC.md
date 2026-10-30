@@ -54,6 +54,9 @@ Em spaces, só a @menção dispara o app (Verificado). No DM, toda mensagem disp
 | RF9 | Falha em qualquer etapa (modelo, Grafana, Chat): mensagem curta de erro na thread, sem expor detalhes internos | Inferido |
 | RF10 | Cada pedido atendido gera registro de auditoria: quem, onde, quando, modo, ferramentas chamadas | Inferido |
 | RF11 | Eventos reentregues pelo Chat não geram respostas duplicadas | Verificado (reentrega) / Inferido (tratamento) |
+| RF12 | **Memória de incidentes:** ao ser mencionado sobre um alerta, o agente associa o alerta a ocorrências anteriores e informa o que já se sabe delas (seção 7.9) | Decidido (requisito) / Inferido (desenho) |
+| RF13 | A memória distingue **hipótese do agente** de **fato confirmado por uma pessoa**. Só uma pessoa confirma, por menção explícita ao app, e o registro guarda quem e quando | Decidido |
+| RF14 | O README documenta o uso do app para pessoas e operadores: como usar, o que a memória guarda, como é usada | Decidido |
 
 ## 5. Requisitos não-funcionais
 
@@ -64,7 +67,7 @@ Em spaces, só a @menção dispara o app (Verificado). No DM, toda mensagem disp
 | Autorização | Space: qualquer membro de space permitido (lista de IDs de space no serviço). DM: visibilidade do app restrita a um Google Group | Decidido |
 | Dados sensíveis | Sem restrição declarada. O tráfego ao modelo passa pelo gateway de IA da organização | Decidido |
 | Disponibilidade | Se o serviço cair, perde-se a análise, não o alerta, porque o caminho atual do Alertmanager continua intacto | Inferido |
-| Persistência | O contexto por thread e o estado de "o que já foi entregue" sobrevivem a reinício do serviço | Inferido |
+| Persistência | O contexto por thread, o estado de "o que já foi entregue" e a memória de incidentes sobrevivem a reinício e a recriação do contêiner | Decidido (memória) / Inferido (demais) |
 | Operação | O próprio dono opera; roda na mesma VM do Grafana e do Alertmanager | Decidido (VM) / Inferido (operador) |
 | Custo | Modelos básicos; economizar tokens; cota do gateway é finita e compartilhada com quem usar a chave | Decidido |
 | Distribuição | Mesmo código para dois remotes (organização e GitHub pessoal); repositório limpo de qualquer dado específico da organização | Decidido |
@@ -166,6 +169,20 @@ Inferido: preferir o resumo compacto, por causa da cota. Confirmar na implementa
 - Modelos básicos. A lista exata de modelos disponíveis no gateway e o suporte a tool use e streaming dependem de teste.
 - O gateway precisa encaminhar o que o SDK envia (formato de API compatível com Anthropic, cabeçalhos e recursos). Se não encaminhar algum recurso, o recurso correspondente quebra. Ver pendência P1.
 
+### 7.9 Memória de incidentes
+O histórico de disparos já existe no Prometheus (série `ALERTS`, dentro da retenção configurada) e o agente o consulta pelo MCP. A memória guarda **o que o Prometheus não sabe**: causa, mitigação e a thread onde isso foi discutido.
+
+- **Registro:** assinatura do alerta (nome e labels estáveis), thread, data, resumo curto, estado (`hipótese` ou `confirmado`) e autor da confirmação. Sem trechos brutos de log.
+- **Escrita pelo serviço, não pelo agente:** o agente não ganha ferramenta de escrita. Ao fim de cada resposta sobre um alerta, ele devolve um resumo estruturado e o serviço grava como `hipótese`. A confirmação vem de uma menção explícita de pessoa.
+- **Leitura:** o serviço busca por assinatura e injeta poucos registros, com teto de tamanho, no contexto da resposta. O agente também tem uma ferramenta de busca por texto, somente leitura, para casos parecidos com outra assinatura.
+- **Como dado, não instrução:** registros entram no prompt identificados como dados, com data e estado. Registro antigo é indício a reconfirmar contra a evidência atual, nunca conclusão.
+- **Escopo:** só alertas e registros explícitos. Perguntas livres e DMs não entram na memória, para o conteúdo de uma conversa privada não reaparecer em um space.
+- **Armazenamento:** banco local em arquivo com busca textual, em volume persistente. Mesmo banco do estado por thread (7.7).
+- **Confirmação e retenção:** qualquer membro de um space permitido pode confirmar, com o autor registrado. Sem expiração, com a data sempre visível.
+- **Carga inicial:** o operador pode carregar conhecimento já existente, curado e sem segredos. Fica só no volume, nunca no repositório.
+
+Alternativas descartadas: memória automática do SDK (desligada de propósito em 7.1, sem procedência nem estrutura); busca vetorial (exige serviço de embeddings e infraestrutura a mais para um volume baixo, reavaliar se a busca textual falhar).
+
 ## 8. Segurança
 
 | Ameaça | Mitigação | Estado |
@@ -176,6 +193,7 @@ Inferido: preferir o resumo compacto, por causa da cota. Confirmar na implementa
 | Vazamento de segredo no repositório público | Configuração e segredos só no ambiente da VM; histórico limpo desde o primeiro commit; nada de host, ID de space, URL ou saída real de log em testes | Decidido |
 | Agente herda ferramentas de escrita do SDK | Seção 7.2: remoção explícita, modo `dontAsk`, barreira programática | Verificado (fatos) / Inferido (desenho) |
 | Configuração do disco alterando o comportamento | Seção 7.1: isolamento | Verificado (fatos) |
+| Memória envenenada: texto malicioso de um alerta vira resumo e influencia respostas futuras | Registros como dados e com procedência; `hipótese` nunca é apresentada como fato; somente leitura estrutural limita o alcance; registros podem ser apagados pelo operador | Inferido |
 | Estouro de cota do gateway | Orçamentos por modo; limite de saída MCP; teto de resposta | Inferido |
 
 ## 9. Parâmetros de configuração
@@ -187,7 +205,7 @@ Conceituais; nomes finais ficam para a implementação.
 - Grafana: URL local, token da service account (segredo), categorias de ferramenta ligadas.
 - Jaeger: UID do datasource no Grafana.
 - Agente: arquivo do prompt de sistema, limites por modo, limite de saída MCP, limite de tokens por resposta.
-- Estado e auditoria: local de persistência.
+- Estado, memória e auditoria: local de persistência; retenção da memória.
 
 ## 10. Observabilidade do próprio serviço
 
@@ -207,7 +225,10 @@ Conceituais; nomes finais ficam para a implementação.
 8. Evento duplicado do Chat não gera segunda resposta.
 9. O agente **não consegue** chamar ferramenta de escrita nem ferramenta embutida de arquivo ou comando, mesmo quando o texto do alerta pede isso (teste com um alerta contendo instrução maliciosa).
 10. Se o gateway ou o Grafana falham, a thread recebe uma mensagem curta de erro e o serviço continua funcionando.
-11. O repositório não contém host, segredo, ID de space nem saída de log da organização, e o histórico está limpo.
+11. Um alerta que já ocorreu, com causa confirmada em outra thread, recebe resposta que cita a ocorrência anterior, a data e o estado; uma hipótese aparece identificada como hipótese.
+12. O conteúdo de um DM nunca aparece em resposta de space.
+13. Após recriar o contêiner, a memória continua disponível.
+14. O repositório não contém host, segredo, ID de space nem saída de log da organização, e o histórico está limpo.
 
 ## 12. Pendências e validações
 
@@ -229,6 +250,7 @@ Ordem sugerida: as primeiras são as que podem invalidar o desenho.
 | P12 | Criar o Google Group de acesso ao DM e ligá-lo à visibilidade do app | O dono |
 | P13 | Alcance do aviso de nova menção: por thread (padrão) ou por usuário | Confirmação do dono |
 | P14 | Como o modo é escolhido: por palavras do pedido ou pelo próprio modelo | Decisão na implementação |
+| P15 | Quem fora da lista de visibilidade consegue mencionar o app num space onde ele já está | Teste com outra pessoa no space piloto. Se não conseguir, usar Google Group, que exige o app na lista de permissões do admin do Workspace |
 
 ## 13. Fatos verificados
 

@@ -21,10 +21,9 @@ services:
       - ${GRAFANA_HOSTNAME:-grafana.invalid}:host-gateway
     networks: [observability]
 
-  # No long-running service yet: use `docker compose run --rm app <command>`.
   app:
     build: .
-    profiles: [tools]
+    restart: unless-stopped
     mem_limit: 1g
     depends_on: [mcp-grafana]
     environment:
@@ -36,6 +35,14 @@ services:
       JAEGER_DATASOURCE_UID: ${JAEGER_DATASOURCE_UID:-}
       MCP_GRAFANA_URL: http://mcp-grafana:8000/mcp
       MCP_GRAFANA_SERVER_TOKEN: ${MCP_GRAFANA_SERVER_TOKEN:?}
+      CLOUDOBSAI_ALLOWED_SPACES: ${CLOUDOBSAI_ALLOWED_SPACES:?}
+      CLOUDOBSAI_ALERT_SPACES: ${CLOUDOBSAI_ALERT_SPACES:-}
+      CLOUDOBSAI_WEBHOOK_TOKEN: ${CLOUDOBSAI_WEBHOOK_TOKEN:?}
+      CLOUDOBSAI_PUBSUB_SUBSCRIPTION: ${CLOUDOBSAI_PUBSUB_SUBSCRIPTION:?}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/chat-sa.json
+    volumes:
+      - ${CLOUDOBSAI_DATA_PATH:-./data}:/var/lib/cloudobsai/data
+      - ${CLOUDOBSAI_SA_KEY_PATH:-./secrets/chat-sa.json}:/run/secrets/chat-sa.json:ro
     extra_hosts:
       - ${GRAFANA_HOSTNAME:-grafana.invalid}:host-gateway
     networks: [observability]

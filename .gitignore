@@ -4,3 +4,6 @@ __pycache__/
 *.egg-info/
 .agent-home/
 .agent-cwd/
+data/
+secrets/
+.pytest_cache/
