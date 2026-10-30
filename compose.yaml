@@ -17,6 +17,8 @@ services:
       GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_SERVICE_ACCOUNT_TOKEN:?}
       # The network is shared with other containers, so callers must authenticate.
       MCP_GRAFANA_SERVER_TOKEN: ${MCP_GRAFANA_SERVER_TOKEN:?}
+    extra_hosts:
+      - ${GRAFANA_HOSTNAME:-grafana.invalid}:host-gateway
     networks: [observability]
 
   # No long-running service yet: use `docker compose run --rm app <command>`.
@@ -34,6 +36,8 @@ services:
       JAEGER_DATASOURCE_UID: ${JAEGER_DATASOURCE_UID:-}
       MCP_GRAFANA_URL: http://mcp-grafana:8000/mcp
       MCP_GRAFANA_SERVER_TOKEN: ${MCP_GRAFANA_SERVER_TOKEN:?}
+    extra_hosts:
+      - ${GRAFANA_HOSTNAME:-grafana.invalid}:host-gateway
     networks: [observability]
 
 networks:

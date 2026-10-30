@@ -17,11 +17,11 @@ from cloudobsai.agent_options import build_options
 WRITE_LIKE = re.compile(r"create|update|delete|patch|grafana_api_request", re.I)
 
 
-def check_jaeger() -> None:
+def check_jaeger() -> bool:
     uid = os.environ.get("JAEGER_DATASOURCE_UID")
     if not uid:
         print("P4: skipped (JAEGER_DATASOURCE_UID not set)")
-        return
+        return True
     url = f"{os.environ['GRAFANA_URL'].rstrip('/')}/api/datasources/proxy/uid/{uid}/api/services"
     request = urllib.request.Request(
         url, headers={"Authorization": f"Bearer {os.environ['GRAFANA_SERVICE_ACCOUNT_TOKEN']}"}
@@ -30,10 +30,12 @@ def check_jaeger() -> None:
         with urllib.request.urlopen(request, timeout=15) as response:
             services = json.load(response).get("data") or []
         print(f"P4: OK, Viewer reached Jaeger through the proxy ({len(services)} services)")
+        return True
     except urllib.error.HTTPError as e:
         print(f"P4: FAILED, HTTP {e.code}")
     except (urllib.error.URLError, TimeoutError, ValueError) as e:
         print(f"P4: FAILED, {type(e).__name__}")
+    return False
 
 
 async def check_agent() -> bool:
@@ -71,5 +73,6 @@ async def check_agent() -> bool:
     return ok
 
 
-check_jaeger()
-sys.exit(0 if asyncio.run(check_agent()) else 1)
+jaeger_ok = check_jaeger()
+agent_ok = asyncio.run(check_agent())
+sys.exit(0 if jaeger_ok and agent_ok else 1)
