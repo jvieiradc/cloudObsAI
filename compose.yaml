@@ -2,6 +2,7 @@ services:
   mcp-grafana:
     image: grafana/mcp-grafana:2.1.1
     restart: unless-stopped
+    mem_limit: 256m
     # Read-only: no write tools, no generic API tool (SPEC 7.3).
     command:
       - --transport=streamable-http
@@ -22,6 +23,7 @@ services:
   app:
     build: .
     profiles: [tools]
+    mem_limit: 1g
     depends_on: [mcp-grafana]
     environment:
       ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:?}
