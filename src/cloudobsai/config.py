@@ -41,13 +41,13 @@ def load() -> Config:
         system_prompt_file=Path(os.environ.get("CLOUDOBSAI_SYSTEM_PROMPT_FILE") or "/app/prompts/system.md"),
         explain=Mode(
             "explicar",
-            _int("CLOUDOBSAI_EXPLAIN_MAX_TURNS", 4),
+            _int("CLOUDOBSAI_EXPLAIN_MAX_TURNS", 8),
             _int("CLOUDOBSAI_EXPLAIN_TIMEOUT", 90),
             _int("CLOUDOBSAI_EXPLAIN_MAX_TOKENS", 500),
         ),
         investigate=Mode(
             "investigar",
-            _int("CLOUDOBSAI_INVESTIGATE_MAX_TURNS", 10),
+            _int("CLOUDOBSAI_INVESTIGATE_MAX_TURNS", 16),
             _int("CLOUDOBSAI_INVESTIGATE_TIMEOUT", 240),
             _int("CLOUDOBSAI_INVESTIGATE_MAX_TOKENS", 900),
         ),

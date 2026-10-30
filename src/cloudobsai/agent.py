@@ -4,6 +4,7 @@ import os
 from dataclasses import dataclass, field
 
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock, query
+from claude_agent_sdk._errors import ResultError
 
 from .agent_options import build_options
 from .config import Mode
@@ -48,20 +49,24 @@ class Agent:
     async def run(self, prompt: str, mode: Mode) -> AgentResult:
         result = AgentResult()
         parts: list[str] = []
-        async with asyncio.timeout(mode.timeout_seconds):
-            async for message in query(prompt=prompt, options=self._options(mode)):
-                if isinstance(message, AssistantMessage):
-                    # Only the last assistant message is the answer; earlier text is narration.
-                    texts = [b.text for b in message.content if isinstance(b, TextBlock)]
-                    if texts:
-                        parts = texts
-                    result.tools += [b.name for b in message.content if isinstance(b, ToolUseBlock)]
-                elif isinstance(message, ResultMessage):
-                    usage = message.usage or {}
-                    result.input_tokens = usage.get("input_tokens")
-                    result.output_tokens = usage.get("output_tokens")
-                    result.cost_usd = message.total_cost_usd
-                    if message.is_error:
-                        result.outcome = message.subtype
+        try:
+            async with asyncio.timeout(mode.timeout_seconds):
+                async for message in query(prompt=prompt, options=self._options(mode)):
+                    if isinstance(message, AssistantMessage):
+                        # Only the last assistant message is the answer; earlier text is narration.
+                        texts = [b.text for b in message.content if isinstance(b, TextBlock)]
+                        if texts:
+                            parts = texts
+                        result.tools += [b.name for b in message.content if isinstance(b, ToolUseBlock)]
+                    elif isinstance(message, ResultMessage):
+                        usage = message.usage or {}
+                        result.input_tokens = usage.get("input_tokens")
+                        result.output_tokens = usage.get("output_tokens")
+                        result.cost_usd = message.total_cost_usd
+                        if message.is_error:
+                            result.outcome = message.subtype
+        except ResultError as error:
+            # The SDK raises after the error result; the usage above is already kept for the audit.
+            result.outcome = error.subtype or "result_error"
         result.text = "\n".join(parts).strip()
         return result

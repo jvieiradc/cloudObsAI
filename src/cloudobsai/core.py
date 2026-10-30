@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 
 MENTION_WARNING = "\n\n_Para continuar nesta thread, mencione sempre o app: sem a menção, ele não recebe a mensagem._"
 ERROR_MESSAGE = "Não consegui concluir a análise agora. Tente de novo em instantes."
+LIMIT_MESSAGE = "Precisei de mais consultas do que o limite permite. Tente restringir: um serviço, um alerta ou uma janela menor."
 HELP_MESSAGE = "Me diga o que analisar. Exemplo: *explica este alerta* ou *investiga a causa*."
 INVESTIGATE_WORDS = re.compile(r"\b(investig\w*|aprofund\w*|causa\w*|por que|porque|detalh\w*|analis\w*)\b", re.I)
 REGISTER_COMMAND = re.compile(r"^\s*registr\w*\s*:?\s+(?P<text>.+)", re.I | re.S)
@@ -118,11 +119,20 @@ class Core:
         prompt = build_prompt(text, thread, turns, incidents)
         try:
             result = await self._agent.run(prompt, mode)
-            if result.outcome != "ok" or not result.text:
-                raise RuntimeError(result.outcome)
         except Exception as error:
             log.error("agent_failed error=%s", type(error).__name__)
             return ERROR_MESSAGE, {"mode": mode.name, "result": f"agent_error:{type(error).__name__}"}
+        usage = {
+            "mode": mode.name,
+            "tools": ",".join(result.tools),
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "cost_usd": result.cost_usd,
+        }
+        if result.outcome != "ok" or not result.text:
+            log.error("agent_failed outcome=%s", result.outcome)
+            message = LIMIT_MESSAGE if result.outcome == "error_max_turns" else ERROR_MESSAGE
+            return message, {**usage, "result": f"agent_error:{result.outcome}"}
 
         answer, note = split_memory(result.text)
         if thread_name:
@@ -132,10 +142,4 @@ class Core:
             self._store.add_incident(
                 note, "hipotese", signature=thread["signature"], alertname=thread["alertname"], thread_name=thread_name
             )
-        return answer, {
-            "mode": mode.name,
-            "tools": ",".join(result.tools),
-            "input_tokens": result.input_tokens,
-            "output_tokens": result.output_tokens,
-            "cost_usd": result.cost_usd,
-        }
+        return answer, usage

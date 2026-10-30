@@ -7,7 +7,7 @@ import pytest
 from cloudobsai.agent import AgentResult
 from cloudobsai.alerts import handle_alert, signature
 from cloudobsai.config import Config, Mode
-from cloudobsai.core import ERROR_MESSAGE, MENTION_WARNING, Core, choose_mode, split_memory
+from cloudobsai.core import ERROR_MESSAGE, LIMIT_MESSAGE, MENTION_WARNING, Core, choose_mode, split_memory
 from cloudobsai.store import Store
 
 SPACE = "spaces/ALLOWED"
@@ -24,15 +24,15 @@ class FakeChat:
 
 
 class FakeAgent:
-    def __init__(self, text="resposta", error=None):
-        self.text, self.error, self.prompts, self.modes = text, error, [], []
+    def __init__(self, text="resposta", error=None, outcome="ok"):
+        self.text, self.error, self.outcome, self.prompts, self.modes = text, error, outcome, [], []
 
     async def run(self, prompt, mode):
         self.prompts.append(prompt)
         self.modes.append(mode.name)
         if self.error:
             raise self.error
-        return AgentResult(text=self.text, tools=["mcp__grafana__x"])
+        return AgentResult(text=self.text, tools=["mcp__grafana__x"], outcome=self.outcome)
 
 
 @pytest.fixture
@@ -140,6 +140,12 @@ def test_agent_failure_answers_short_error(config, store):
     chat = FakeChat()
     run(Core(config, store, chat, FakeAgent(error=TimeoutError())).handle(event()))
     assert chat.posts[0]["text"].startswith(ERROR_MESSAGE)
+
+
+def test_turn_limit_answers_with_guidance(config, store):
+    chat = FakeChat()
+    run(Core(config, store, chat, FakeAgent(text="", outcome="error_max_turns")).handle(event()))
+    assert chat.posts[0]["text"].startswith(LIMIT_MESSAGE)
 
 
 def test_memory_note_is_hidden_and_stored_as_hypothesis(config, store):
