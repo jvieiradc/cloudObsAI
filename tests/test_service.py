@@ -152,6 +152,27 @@ def test_bare_mention_without_context_asks_for_it(config, store):
     assert agent.prompts == [] and chat.posts[0]["text"].startswith(HELP_MESSAGE)
 
 
+def test_quoted_alert_finds_memory_and_stores_hypothesis(config, store):
+    chat = FakeChat()
+    core = Core(config, store, chat, FakeAgent(text="ok\nMEMORIA: provedor instavel"))
+    run(core.handle(quoting(event(name="m1"), "(WARNING) Linkdown - Firing\nDescription: caiu")))
+    second = FakeAgent()
+    core = Core(config, store, chat, second)
+    run(core.handle(quoting(event(name="m2", thread=f"{SPACE}/threads/T2"), "(CRITICAL) LINKDOWN - Resolved")))
+    assert "<incident_memory>" in second.prompts[0] and "provedor instavel" in second.prompts[0]
+
+
+def test_register_on_a_quote_is_linked_to_the_alert(config, store):
+    core = Core(config, store, FakeChat(), FakeAgent())
+    run(core.handle(quoting(event(text="registra: era o provedor"), "(WARNING) Linkdown - Firing")))
+    assert store.related_incidents("", "LinkDown")[0]["state"] == "confirmado"
+
+
+def test_records_without_signature_do_not_match_each_other(store):
+    store.add_incident("sem assinatura", "confirmado")
+    assert store.related_incidents("", "Outro") == []
+
+
 def test_free_question_has_no_alert_context(config, store):
     agent = FakeAgent()
     run(Core(config, store, FakeChat(), agent).handle(event()))

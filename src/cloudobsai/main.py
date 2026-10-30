@@ -27,7 +27,12 @@ async def run() -> None:
 
     async with aiohttp.ClientSession() as session:
         chat = ChatClient(session)
-        agent = Agent(store, config.system_prompt_file.read_text())
+        system_prompt = config.system_prompt_file.read_text()
+        # Facts about this deployment stay in the data volume, never in the repository.
+        environment = config.data_dir / "environment.md"
+        if environment.exists():
+            system_prompt += f"\n**Este ambiente:**\n{environment.read_text()}"
+        agent = Agent(store, system_prompt)
         core = Core(config, store, chat, agent)
 
         async def process(event: dict) -> None:

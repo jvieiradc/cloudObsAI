@@ -134,7 +134,8 @@ class Store:
     def related_incidents(self, signature: str, alertname: str, limit: int = 3) -> list[sqlite3.Row]:
         """Same signature first, then same alert name; confirmed before hypotheses."""
         return self._db.execute(
-            """SELECT * FROM incidents WHERE signature = ? OR (alertname = ? AND alertname != '')
+            """SELECT * FROM incidents
+               WHERE (signature = ? AND signature != '') OR (lower(alertname) = lower(?) AND alertname != '')
                ORDER BY signature = ? DESC, state = 'confirmado' DESC, id DESC LIMIT ?""",
             (signature, alertname, signature, limit),
         ).fetchall()

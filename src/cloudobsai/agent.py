@@ -11,6 +11,12 @@ from .config import Mode
 from .store import Store
 from .tools import jaeger_server, memory_server
 
+WRAP_UP_TIMEOUT_SECONDS = 30
+WRAP_UP_PROMPT = (
+    "O limite de consultas acabou. Responda agora com o que já obteve, no formato curto de sempre, "
+    "e diga em poucas palavras o que ficou sem verificar."
+)
+
 
 @dataclass
 class AgentResult:
@@ -68,5 +74,30 @@ class Agent:
         except ResultError as error:
             # The SDK raises after the error result; the usage above is already kept for the audit.
             result.outcome = error.subtype or "result_error"
+            if error.subtype == "error_max_turns" and error.session_id:
+                parts = await self._wrap_up(error.session_id, mode, result) or parts
         result.text = "\n".join(parts).strip()
         return result
+
+    async def _wrap_up(self, session_id: str, mode: Mode, result: AgentResult) -> list[str]:
+        """Out of turns: keep what was found by asking for the answer again, now without tools."""
+        options = build_options(
+            system_prompt=self._system_prompt,
+            mcp_servers={},
+            allowed_mcp_prefixes=(),
+            max_turns=1,
+            extra_env={"CLAUDE_CODE_MAX_OUTPUT_TOKENS": str(mode.max_output_tokens)},
+        )
+        options.resume = session_id
+        texts: list[str] = []
+        try:
+            async with asyncio.timeout(WRAP_UP_TIMEOUT_SECONDS):
+                async for message in query(prompt=WRAP_UP_PROMPT, options=options):
+                    if isinstance(message, AssistantMessage):
+                        texts = [b.text for b in message.content if isinstance(b, TextBlock)] or texts
+                    elif isinstance(message, ResultMessage) and not message.is_error:
+                        result.outcome = "ok"
+                        result.cost_usd = (result.cost_usd or 0) + (message.total_cost_usd or 0)
+        except (ResultError, TimeoutError):
+            return []
+        return texts if result.outcome == "ok" else []

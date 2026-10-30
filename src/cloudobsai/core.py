@@ -20,6 +20,8 @@ HELP_MESSAGE = (
 DEFAULT_REQUEST = "Explique isto em poucas linhas e diga o estado atual."
 INVESTIGATE_WORDS = re.compile(r"\b(investig\w*|aprofund\w*|causa\w*|por que|porque|detalh\w*|analis\w*)\b", re.I)
 REGISTER_COMMAND = re.compile(r"^\s*registr\w*\s*:?\s+(?P<text>.+)", re.I | re.S)
+# Alert messages posted by the Alertmanager bridge: "(WARNING) AlertName - Firing".
+QUOTED_ALERT = re.compile(r"^\s*\(\w+\)\s+(?P<name>.+?)\s+-\s+(?:firing|resolved)\b", re.I)
 MEMORY_LINE = re.compile(r"^\s*MEMORIA:\s*(?P<text>.+?)\s*$", re.M)
 
 
@@ -43,8 +45,17 @@ def quoted_text(message: dict) -> str:
     return (snapshot.get("text") or snapshot.get("formattedText") or "").strip()
 
 
-def build_prompt(text: str, thread: sqlite3.Row | None, turns: list, incidents: list, quoted: str = "") -> str:
+def quoted_alertname(quoted: str) -> str:
+    match = QUOTED_ALERT.match(quoted)
+    return match.group("name").lower() if match else ""
+
+
+def build_prompt(
+    text: str, thread: sqlite3.Row | None, turns: list, incidents: list, quoted: str = "", query_budget: int = 0
+) -> str:
     sections = []
+    if query_budget:
+        sections.append(f"<budget>Até {query_budget} rodadas de consulta. Depois, responda com o que tiver.</budget>")
     if thread is not None and thread["alert_json"]:
         sections.append(f"<alert_context>\n{thread['alert_json']}\n</alert_context>")
     if quoted:
@@ -89,7 +100,8 @@ class Core:
 
         register = REGISTER_COMMAND.match(text) if not is_dm else None
         if register:
-            answer, audit = self._register(register.group("text").strip(), thread_name, user), {"mode": "registro"}
+            answer = self._register(register.group("text").strip(), thread_name, user, quoted_alertname(quoted))
+            audit = {"mode": "registro"}
         elif not text and not quoted and not self._is_alert_thread(thread_name, is_dm):
             answer, audit = HELP_MESSAGE, {"mode": "ajuda"}
         else:
@@ -115,13 +127,13 @@ class Core:
         thread = self._store.thread(thread_name) if thread_name and not is_dm else None
         return thread is not None and bool(thread["alert_json"])
 
-    def _register(self, summary: str, thread_name: str, author: str) -> str:
+    def _register(self, summary: str, thread_name: str, author: str, alertname: str = "") -> str:
         thread = self._store.thread(thread_name) if thread_name else None
         self._store.add_incident(
             summary,
             "confirmado",
             signature=(thread["signature"] or "") if thread else "",
-            alertname=(thread["alertname"] or "") if thread else "",
+            alertname=(thread["alertname"] or "") if thread and thread["alertname"] else alertname,
             thread_name=thread_name or None,
             author=author,
         )
@@ -131,9 +143,11 @@ class Core:
         mode = choose_mode(text, self._config)
         thread = self._store.thread(thread_name) if thread_name and not is_dm else None
         is_alert = thread is not None and bool(thread["alert_json"])
-        incidents = self._store.related_incidents(thread["signature"], thread["alertname"]) if is_alert else []
+        alertname = thread["alertname"] if is_alert else "" if is_dm else quoted_alertname(quoted)
+        signature_ = thread["signature"] if is_alert else ""
+        incidents = self._store.related_incidents(signature_, alertname) if signature_ or alertname else []
         turns = self._store.recent_turns(thread_name) if thread_name else []
-        prompt = build_prompt(text, thread, turns, incidents, quoted)
+        prompt = build_prompt(text, thread, turns, incidents, quoted, max(mode.max_turns - 2, 1))
         try:
             result = await self._agent.run(prompt, mode)
         except Exception as error:
@@ -154,9 +168,9 @@ class Core:
         answer, note = split_memory(result.text)
         if thread_name:
             self._store.add_turn(thread_name, text, answer)
-        # Only alert threads feed the memory, so free questions and DMs never leak into a space.
-        if is_alert and note:
+        # Only identified alerts feed the memory, so free questions and DMs never leak into a space.
+        if alertname and note:
             self._store.add_incident(
-                note, "hipotese", signature=thread["signature"], alertname=thread["alertname"], thread_name=thread_name
+                note, "hipotese", signature=signature_, alertname=alertname, thread_name=thread_name
             )
         return answer, usage

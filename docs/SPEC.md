@@ -43,8 +43,8 @@ Em spaces, só a @menção dispara o app (Verificado). No DM, toda mensagem disp
 
 | # | Requisito | Estado |
 |---|---|---|
-| RF1 | O serviço recebe alertas do Alertmanager por um receiver adicional (webhook genérico), posta cada alerta no space e guarda o contexto (labels, annotations, fingerprint, início, estado) por thread. Atualizações e resoluções do mesmo grupo de alertas vão para a mesma thread | Decidido (receiver) / Inferido (uma thread por grupo de alertas) |
-| RF2 | Menção na thread de um alerta: o agente usa o contexto guardado daquele alerta | Decidido |
+| RF1 | Os alertas continuam sendo postados no space pelo caminho atual do Alertmanager. O app não posta alertas. O contexto vem da mensagem citada: ao responder citando um alerta e mencionar o app, ele identifica o alerta pelo texto e busca a evidência na stack | Decidido |
+| RF2 | Menção citando um alerta basta, mesmo sem texto. Menção numa thread sem citar não tem o contexto, porque o Chat só entrega ao app a mensagem que o mencionou | Decidido |
 | RF3 | Menção em space fora de thread de alerta: responde como pergunta livre | Decidido |
 | RF4 | DM: responde como pergunta livre, sem contexto de alerta | Decidido |
 | RF5 | Dois modos: **explicar** (passada curta, poucas consultas) e **investigar** (mais consultas, orçamento maior). O padrão é explicar; investigar só quando o pedido indicar | Decidido (modos) / Inferido (padrão e critério) |
@@ -109,8 +109,7 @@ Um único serviço implantado na VM da GCP, com cinco responsabilidades:
 
 | Decisão | Escolha | Alternativa descartada e motivo | Estado |
 |---|---|---|---|
-| Como saber qual é o alerta | O serviço recebe o alerta, posta e guarda o contexto | Ler a mensagem do alerta pela API do Chat: exige escopo com aprovação de admin, só enxerga mensagens públicas, a leitura de mensagens postadas por webhook não é documentada e obriga a parsear texto | Decidido |
-| Postagem em thread | O serviço posta como app, com chave de thread e `REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD` | Webhook de entrada do Chat: o app não seria o autor da mensagem | Verificado (opção) / Inferido (escolha) |
+| Como saber qual é o alerta | Mensagem citada pelo usuário, entregue no evento do Chat, sem escopo extra | O app receber e postar os alertas: descartado pelo dono, os alertas continuam vindo do Alertmanager. Ler a thread pela API: exige escopo com aprovação de admin | Decidido |
 | Entrega das menções | Pub/Sub, resposta assíncrona | Endpoint HTTP público: expõe a VM à internet | Inferido |
 | Runtime do agente | Agent SDK | Client SDK com laço próprio: superfície menor, mas o dono escolheu o Agent SDK | Decidido |
 | Acesso a dados | MCP do Grafana somente leitura + ferramenta própria para Jaeger | MCP com permissão ampla e ferramenta genérica de API: contorna as guardas de consulta | Decidido (MCP) / Inferido (restrições) |
