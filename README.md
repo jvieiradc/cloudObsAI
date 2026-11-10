@@ -2,7 +2,9 @@
 
 Assistente de diagnóstico somente leitura para uma stack de observabilidade (Grafana, Prometheus, Alertmanager, Loki, Jaeger), acionado pelo Google Chat. Requisitos e arquitetura em [docs/SPEC.md](docs/SPEC.md).
 
-**Estado:** em construção. O serviço do Chat responde a menções e a DMs; o recebimento de alertas depende de uma rota no Alertmanager.
+**Estado:** em construção. O serviço do Chat responde a menções em spaces permitidos e a DMs. Para falar de um alerta, responda à mensagem dele citando-a e mencione o app: o texto citado identifica o alerta, e o app busca a evidência na stack.
+
+O receptor de alertas (`/alerts`) existe, mas não é usado no momento: os alertas continuam chegando ao space pelo caminho atual do Alertmanager.
 
 ## Rodar
 
@@ -30,7 +32,7 @@ docker compose run --rm app python scripts/validate_stack.py
    docker compose up -d app
    ```
 
-Um space na lista responde a menções. Para receber alertas pelo app, ele também precisa estar em `CLOUDOBSAI_ALERT_SPACES` e ter uma rota no Alertmanager.
+Um space na lista responde a menções.
 
 ## Uso e custo
 
@@ -39,3 +41,7 @@ docker compose exec app python scripts/usage.py 7
 ```
 
 Mostra pedidos, erros, tokens e custo estimado por dia e por modo. O custo é uma estimativa do SDK por preço de tabela; o valor de referência é o painel do gateway.
+
+## Licença
+
+[MIT](LICENSE).
